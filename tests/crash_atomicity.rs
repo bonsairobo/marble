@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rand::Rng;
 
-use marble::{Config, Marble, ObjectId};
+use marble::{AlignedVec, Config, Marble, ObjectId};
 
 // test names, also used as dir names
 const BATCHES_DIR: &str = "crash_batches";
@@ -125,7 +125,7 @@ fn write_batches_inner(start: u32, m: Arc<Marble>) {
 /// Verifies that the keys in the tree are correctly recovered (i.e., equal).
 /// Panics if they don't match up.
 fn verify_batches(m: &Marble) {
-    let values: Vec<Option<Vec<u8>>> = (1..=BATCH_SIZE as u64)
+    let values: Vec<Option<AlignedVec>> = (1..=BATCH_SIZE as u64)
         .map(|i| {
             let oid = ObjectId::new(i).unwrap();
             m.read(oid).unwrap()

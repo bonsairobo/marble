@@ -1,3 +1,4 @@
+mod aligned_vec;
 mod metadata_log;
 
 use std::collections::{BTreeMap, HashMap};
@@ -10,6 +11,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex, RwLock,
 };
+
+pub use aligned_vec::AlignedVec;
 
 use fault_injection::fallible;
 use pagetable::PageTable;
@@ -364,7 +367,7 @@ impl Marble {
     ///
     /// May be called concurrently with background calls to
     /// `maintenance` and `write_batch`.
-    pub fn read(&self, pid: ObjectId) -> io::Result<Option<Vec<u8>>> {
+    pub fn read(&self, pid: ObjectId) -> io::Result<Option<AlignedVec>> {
         let fams = self.fams.read().unwrap();
 
         let lsn = self.page_table.get(pid.0.get()).load(Ordering::Acquire);
@@ -398,7 +401,8 @@ impl Marble {
             ));
         };
 
-        let mut object_buf = Vec::with_capacity(len);
+        // Align the buffer that we return to support zero-copy deserialization.
+        let mut object_buf = AlignedVec::with_capacity(len);
         unsafe {
             object_buf.set_len(len);
         }
