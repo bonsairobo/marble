@@ -48,7 +48,7 @@ impl Kv {
     fn recover(path: &str) -> io::Result<Kv> {
         let heap = Marble::open(path)?;
 
-        let index: Index = if let Some(index_data) = heap.read(index_pid())? {
+        let index: Index = if let Some(index_data) = heap.read_into_vec(index_pid())? {
             deserialize(&index_data).unwrap()
         } else {
             Index::default()
@@ -95,7 +95,7 @@ impl Kv {
 
     fn get(&mut self, key: &Vec<u8>) -> io::Result<Option<Vec<u8>>> {
         let pid = self.pid_for_key(key.clone());
-        let leaf_data = self.heap.read(pid)?.unwrap();
+        let leaf_data = self.heap.read_into_vec(pid)?.unwrap();
         let leaf: Page = deserialize(&leaf_data).unwrap();
         Ok(leaf.kvs.get(key).cloned())
     }
@@ -110,7 +110,7 @@ impl Kv {
 
     fn mutate(&mut self, key: Vec<u8>, value: Option<Vec<u8>>) -> io::Result<Option<Vec<u8>>> {
         let pid = self.pid_for_key(key.clone());
-        let leaf_data = self.heap.read(pid)?.unwrap();
+        let leaf_data = self.heap.read_into_vec(pid)?.unwrap();
         let mut leaf: Page = deserialize(&leaf_data).unwrap();
         let ret = if let Some(v) = value {
             // TODO Page split logic when it becomes large

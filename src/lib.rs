@@ -1,4 +1,4 @@
-mod aligned_vec;
+mod buffer;
 mod metadata_log;
 
 use std::collections::{BTreeMap, HashMap};
@@ -12,7 +12,7 @@ use std::sync::{
     Mutex, RwLock,
 };
 
-pub use aligned_vec::AlignedVec;
+pub use buffer::Buffer;
 
 use fault_injection::fallible;
 use pagetable::PageTable;
@@ -362,12 +362,16 @@ impl Marble {
         })
     }
 
+    pub fn read_into_vec(&self, pid: ObjectId) -> io::Result<Option<Vec<u8>>> {
+        self.read::<Vec<u8>>(pid)
+    }
+
     /// Read a object out of storage. If this object is
     /// unknown or has been removed, returns `Ok(None)`.
     ///
     /// May be called concurrently with background calls to
     /// `maintenance` and `write_batch`.
-    pub fn read(&self, pid: ObjectId) -> io::Result<Option<AlignedVec>> {
+    pub fn read<B: Buffer>(&self, pid: ObjectId) -> io::Result<Option<B>> {
         let fams = self.fams.read().unwrap();
 
         let lsn = self.page_table.get(pid.0.get()).load(Ordering::Acquire);
@@ -402,20 +406,17 @@ impl Marble {
         };
 
         // Align the buffer that we return to support zero-copy deserialization.
-        let mut object_buf = AlignedVec::with_capacity(len);
-        unsafe {
-            object_buf.set_len(len);
-        }
+        let mut object_buf = B::with_length(len);
 
         let object_offset = file_offset + HEADER_LEN as u64;
-        fallible!(fam.file.read_exact_at(&mut object_buf, object_offset));
+        fallible!(fam.file.read_exact_at(object_buf.as_mut(), object_offset));
 
         drop(fams);
 
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(&len_buf);
         hasher.update(&pid_buf);
-        hasher.update(&object_buf);
+        hasher.update(object_buf.as_mut());
         let crc_actual: u32 = hasher.finalize();
 
         if crc_expected != crc_actual {
@@ -1007,9 +1008,9 @@ mod test {
             marble
                 .write_batch([(pid, Some(vec![]))].into_iter())
                 .unwrap();
-            assert!(marble.read(pid).unwrap().is_some());
+            assert!(marble.read_into_vec(pid).unwrap().is_some());
             marble = restart(marble);
-            assert!(marble.read(pid).unwrap().is_some());
+            assert!(marble.read_into_vec(pid).unwrap().is_some());
         });
     }
 
@@ -1024,11 +1025,11 @@ mod test {
             marble
                 .write_batch([(pid_2, Some(vec![]))].into_iter())
                 .unwrap();
-            assert!(marble.read(pid_1).unwrap().is_some());
-            assert!(marble.read(pid_2).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_1).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_2).unwrap().is_some());
             marble = restart(marble);
-            assert!(marble.read(pid_1).unwrap().is_some());
-            assert!(marble.read(pid_2).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_1).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_2).unwrap().is_some());
         });
     }
 
@@ -1045,11 +1046,11 @@ mod test {
             marble
                 .write_batch([(pid_2, Some(vec![]))].into_iter())
                 .unwrap();
-            assert!(marble.read(pid_1).unwrap().is_some());
-            assert!(marble.read(pid_2).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_1).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_2).unwrap().is_some());
             marble.maintenance().unwrap();
-            assert!(marble.read(pid_1).unwrap().is_some());
-            assert!(marble.read(pid_2).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_1).unwrap().is_some());
+            assert!(marble.read_into_vec(pid_2).unwrap().is_some());
         });
     }
 
